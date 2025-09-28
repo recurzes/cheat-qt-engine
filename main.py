@@ -33,7 +33,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.MAX_DISPLAT_RESULTS = 5000
+        self.MAX_DISPLAY_RESULTS = 5000
         global main_window_ref
         main_window_ref = self
 
@@ -43,7 +43,7 @@ class MainWindow(QMainWindow):
         self.selected_pid = None
         self.selected_process_name = ""
 
-        self.process_handle.main_python = None
+        # self.process_handle.main_python = None
 
         self.current_scan_results = []
         self.scan_thread = None
@@ -152,12 +152,12 @@ class MainWindow(QMainWindow):
         double_grid_layout.setContentsMargins(0, 5, 0, 5)
         self.hex_checkbox_double = QCheckBox()
         self.hex_label_double = QLabel("Hex")
-        self.value1.label_double = QLabel("Value: ")
+        self.value_label1_double = QLabel("Value: ")
         self.value_input1_double = QLineEdit("0")
         self.and_label_double = QLabel("and")
         self.value_label2_double = QLabel("Value: ")
         self.value_input2_double = QLineEdit("0")
-        double_grid_layout.addWidget(self.value_input1_double, 0, 1, Qt.AlignBottom)
+        double_grid_layout.addWidget(self.value_label1_double, 0, 1, Qt.AlignBottom)
         double_grid_layout.addWidget(self.value_label2_double, 0, 3, Qt.AlignBottom)
         hex_widget_double = QWidget()
         hex_layout_double = QHBoxLayout(hex_widget_double)
@@ -165,7 +165,7 @@ class MainWindow(QMainWindow):
         hex_layout_double.addWidget(self.hex_checkbox_double)
         hex_layout_double.addWidget(self.hex_checkbox_double)
         hex_layout_double.addStretch()
-        double_grid_layout.addWidget(hex_layout_double, 1, 0)
+        double_grid_layout.addWidget(hex_widget_double, 1, 0)
         double_grid_layout.addWidget(self.value_input1_double, 1, 1)
         double_grid_layout.addWidget(self.and_label_double, 1, 2, Qt.AlignCenter)
         double_grid_layout.addWidget(self.value_input2_double, 1, 3)
