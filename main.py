@@ -24,7 +24,7 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QGridLayout,
     QFormLayout,
-    QComboBox,
+    QComboBox, QSpacerItem, QSizePolicy,
 )
 from PyQt5.QtCore import Qt
 
@@ -204,6 +204,37 @@ class MainWindow(QMainWindow):
         form_layout_internal.addRow(QLabel("Scan Type:"), self.scan_type_combo)
         form_layout_internal.addRow(QLabel("Value Type:", self.value_type_combo))
         scan_controls_layout.addWidget(form_container_widget)
+
+        # Value Type Options and Map (struct format char, size in bytes)
+        self.value_types_map = {
+            "Byte": ("b", 1),
+            "2 Bytes": ("h", 2),
+            "4 Bytes": ("i", 4),
+            "8 Bytes": ("q", 8),
+            "Float": ("f", 4),
+            "Double": ("d", 8),
+            "String": (None, None),
+            "Array of Byte": (None, None)
+        }
+
+        self.value_type_combo.addItems(self.value_types_map.keys())
+
+        # String Specific Checkboxes
+        checkbox_widget = QWidget()
+        checkbox_widget.setContentsMargins(0, 0, 0, 0)
+        checkbox_layout = QVBoxLayout(checkbox_widget)
+        checkbox_layout.setContentsMargins(0, 5, 0, 0)
+        checkbox_layout.setSpacing(3)
+        self.case_sensitive_checkbox = QCheckBox("Case Sensitive")
+        self.utf16_checkbox = QCheckBox("UTF-16")
+        checkbox_layout.addWidget(self.case_sensitive_checkbox)
+        checkbox_layout.addWidget(self.utf16_checkbox)
+        scan_controls_layout.addWidget(checkbox_widget)
+
+        scan_controls_layout.addSpacerItem(QSpacerItem(20, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
+
+        middle_layout.addWidget(scan_controls_widget, 1)
+        main_layout.addLayout(middle_layout, 1)
 
 
 if __name__ == "__main__":
