@@ -1,7 +1,7 @@
 import psutil
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QAbstractItemView, QHeaderView, QPushButton, \
-    QDialogButtonBox, QTableWidgetItem
+    QDialogButtonBox, QTableWidgetItem, QMessageBox
 from typing import Callable
 
 
@@ -57,3 +57,23 @@ class ProcessWindow(QDialog):
             for row, (pid, name) in enumerate(processes):
                 self.process_table.setItem(row, 0, QTableWidgetItem(str(pid)))
                 self.process_table.setItem(row, 1, QTableWidgetItem(name))
+
+    def on_selection_changed(self):
+        self.attach_button.setEnabled(bool(self.process_table.selectedItems()))
+
+    def on_attach(self):
+        selected_items = self.process_table.selectedItems()
+        if selected_items:
+            selected_row = selected_items[0].row()
+            try:
+                pid = int(self.process_table.item(selected_row, 0).text())
+                name = self.process_table.item(selected_row, 1).text()
+                if psutil.pid_exists(pid):
+                    self.process_selected_signal.emit(pid, name)
+                    self.accept()
+                else:
+                    QMessageBox.warning(self, "Process Error", f"Process {name} (PID: {pid}) no longer exists")
+                    self.populate_process()
+
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Could not attach to process: {e}")
