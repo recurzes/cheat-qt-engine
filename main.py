@@ -7,6 +7,7 @@ import os
 import ctypes
 from ctypes import wintypes
 
+import psutil
 from PyQt5.QtWidgets import (
     QMainWindow,
     QApplication,
@@ -36,6 +37,8 @@ PROCESS_QUERY_INFORMATION = 0x0400
 PROCESS_VM_READ = 0x0010
 
 OpenProcess_Raw = kernel32.OpenProcess
+
+ReadProcessMemory_Raw = kernel32.ReadProcessMemory
 
 CloseHandle_Raw = kernel32.CloseHandle
 CloseHandle_Raw.argtypes = [wintypes.HANDLE]
@@ -265,7 +268,7 @@ class MainWindow(QMainWindow):
         # Timer for Real-time Value Updates in Tables
         self.update_timer = QTimer(self)
         self.update_timer.setInterval(1000)
-        # self.update_timer.timeout.connect(self.update_displayed_values)
+        self.update_timer.timeout.connect(self.update_displayed_values)
 
     def open_process_window(self):
         dialog = ProcessWindow(self)
@@ -299,6 +302,119 @@ class MainWindow(QMainWindow):
             self.selected_process_label.setText("No process attached")
             QMessageBox.critical(self, "Attachment Error", f"Could not open process {name} (PID: {pid}): {e}")
 
+    def update_displayed_values(self):
+        if not self.process_handle_main_python or not self.current_scan_results or not self.results_table.isVisible():
+            return
+
+        if not psutil.pid_exists(self.selected_pid):
+            QMessageBox.warning(self, "Process Ended", "The attached process has ended")
+            self.handle_process_attached(0, "")
+            self.update_timer.stop()
+            return
+
+        self.results_table.blockSignals(True)
+
+        viewport = self.results_table.viewport()
+        viewport_rect = viewport.rect()
+
+        first_visible_row = self.results_table.indexAt(viewport_rect.topLeft()).row()
+        last_visible_row_approx = self.results_table.indexAt(viewport_rect.bottomLeft()).row()
+        if first_visible_row == -1:
+            first_visible_row = 0
+        if last_visible_row_approx == -1:
+            if self.results_table.rowCount() > 0 and self.results_table.rowHeight(0) > 0:
+                last_visible_row_approx = first_visible_row + (viewport_rect.height() // self.results_table.rowHeight(0)) + 2
+            else:
+                last_visible_row_approx = self.results_table.rowCount() - 1
+        start_row = max(0, first_visible_row)
+        end_row = min(self.results_table.rowCount(), last_visible_row_approx + 2)
+
+        for row_idx_in_table in range(start_row, end_row):
+            addr_item = self.results_table.item(row_idx_in_table, 0)
+            val_item_cell = self.results_table.item(row_idx_in_table, 1)
+
+            if not addr_item or not val_item_cell:
+                continue
+
+            address = addr_item.data(Qt.UserRole)
+            value_type = addr_item.data(Qt.UserRole + 1)
+
+            if address is not None and value_type is not None and 0 <= row_idx_in_table < len(self.current_scan_results):
+                current_result_entry = self.current_scan_results[row_idx_in_table]
+                if current_result_entry['address'] != address:
+                    continue
+
+                # Modified Read Logic For Aob
+                read_length_for_live_update = None
+                if value_type == "Array Of Byte":
+                    read_length_for_live_update = current_result_entry.get("length", 16)
+
+
+                current_mem_val = self._read_memory_value(address, value_type, length_hint=read_length_for_live_update)
+
+                # new_value_text = self._format_value_for_display(current_mem_val, value_type)
+
+
+    # Private Utils
+    def _read_memory_value(self, address, value_type_str, length_hint=None):
+        if not self.process_handle_main_python:
+            return None
+
+        fmt_char_ign, type_size = self.value_types_map.get(value_type_str, (None, 0))
+        read_size = type_size
+
+        if value_type_str == "String":
+            read_size = length_hint if length_hint is not None else 256
+        elif value_type_str == "Array Of Byte":
+            read_size = length_hint if length_hint is not None else 16
+
+        if read_size is None or read_size <= 0:
+            return None
+
+        buffer = ctypes.create_string_buffer(read_size)
+        bytes_read_c = ctypes.c_size_t(0)
+
+        if ReadProcessMemory_Raw(self.process_handle_main_python, ctypes.c_void_p(address), buffer, read_size, ctypes.byref(bytes_read_c)):
+            actual_read = bytes_read_c.value
+            if actual_read == 0:
+                return None
+
+            if value_type_str not in ["String", "Array Of Byte"] and actual_read < type_size:
+                return None
+
+            if value_type_str in ["String", "Array Of Byte"]:
+                effective_data = buffer.raw[:actual_read]
+            else:
+                effective_data = buffer.raw
+
+            try:
+                if value_type_str == "Byte":
+                    return struct.unpack_from('<b', effective_data, 0)[0]
+                elif value_type_str == "2 Bytes":
+                    return struct.unpack_from('<h', effective_data, 0)[0]
+                elif value_type_str == "4 Bytes":
+                    return struct.unpack_from('<i', effective_data, 0)[0]
+                elif value_type_str == "8 Bytes":
+                    return struct.unpack_from('<q', effective_data, 0)[0]
+                elif value_type_str == "Float":
+                    return struct.unpack_from('<f', effective_data, 0)[0]
+                elif value_type_str == "Double":
+                    return struct.unpack_from('<d', effective_data, 0)[0]
+                elif value_type_str == "String":
+                    raw_b = effective_data
+                    enc = 'utf-16-le' if self.utf16_checkbox.isChecked() else 'ascii'
+                    nt = b'\x00\x00' if enc == 'utf-16-le' else b'\x00'
+                    idx = raw_b.find(nt)
+                    if idx != -1:
+                        raw_b = raw_b[:idx]
+                    return raw_b.decode(enc, errors="ignore")
+                elif value_type_str == "Array Of Byte":
+                    return effective_data
+            except (struct.error, UnicodeDecodeError):
+                return None
+
+
+        return None
 
 
 if __name__ == "__main__":
