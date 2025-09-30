@@ -26,7 +26,7 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QGridLayout,
     QFormLayout,
-    QComboBox, QSpacerItem, QSizePolicy, QMessageBox,
+    QComboBox, QSpacerItem, QSizePolicy, QMessageBox, QTableWidgetItem,
 )
 from PyQt5.QtCore import Qt, QTimer
 
@@ -49,6 +49,9 @@ CloseHandle_Raw = kernel32.CloseHandle
 CloseHandle_Raw.argtypes = [wintypes.HANDLE]
 
 main_window_ref = None
+
+SCANNER_CORE_DLL = None
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -115,7 +118,7 @@ class MainWindow(QMainWindow):
         self.move_to_bottom_button.setToolTip(
             "Add selected address(es) to the bottom list"
         )
-        # self.move_to_bottom_button.clicked.connect(self.move_selected_to_bottom_table)
+        self.move_to_bottom_button.clicked.connect(self.move_selected_to_bottom_table)
         self.move_to_bottom_button.setFixedWidth(40)
 
         results_button_layout = QHBoxLayout()
@@ -331,7 +334,7 @@ class MainWindow(QMainWindow):
         if last_visible_row_approx == -1:
             if self.results_table.rowCount() > 0 and self.results_table.rowHeight(0) > 0:
                 last_visible_row_approx = first_visible_row + (
-                            viewport_rect.height() // self.results_table.rowHeight(0)) + 2
+                        viewport_rect.height() // self.results_table.rowHeight(0)) + 2
             else:
                 last_visible_row_approx = self.results_table.rowCount() - 1
         start_row = max(0, first_visible_row)
@@ -378,8 +381,8 @@ class MainWindow(QMainWindow):
                             values_are_different_from_previous = (current_mem_val != previous_scan_value)
                         except TypeError:
                             values_are_different_from_previous = (
-                                        new_value_text != self._format_value_for_display(previous_scan_value,
-                                                                                         value_type))
+                                    new_value_text != self._format_value_for_display(previous_scan_value,
+                                                                                     value_type))
                     if values_are_different_from_previous:
                         val_item_cell.setBackground(CHANGED_BACKGROUND_BRUSH)
                     else:
@@ -397,6 +400,63 @@ class MainWindow(QMainWindow):
                     val_item_cell.setText("ERR_DATA")
 
         self.results_table.blockSignals(False)
+
+    def move_selected_to_bottom_table(self):
+        sel_items = self.results_table.selectedItems()
+        if not sel_items:
+            QMessageBox.information(self, "No Selection", "Please select rows first.")
+            return
+        unique_rows = sorted(list(set(item.row() for item in sel_items)))
+        for r_idx in unique_rows:
+            addr_i = self.results_table.item(r_idx, 0)
+            if not addr_i:
+                continue
+            addr_val = addr_i.data(Qt.UserRole)
+            type_val = addr_i.data(Qt.UserRole + 1)
+            res_data = next((r for r in self.current_scan_results if r['address'] == addr_val), None)
+            if not res_data:
+                continue
+            exists = any(self.manual_address_table.item(r, 0) and self.manual_address_table.item(r,
+                                                                                                 0).text() == f"0x{res_data['address']:X}"
+                         for r in range(self.manual_address_table.rowCount()))
+
+            if exists:
+                continue
+
+            b_r_c = self.manual_address_table.rowCount()
+            self.manual_address_table.insertRow(b_r_c)
+            live_val = self._read_memory_value(res_data['address'], type_val)
+            val_txt = self._format_value_for_display(live_val if live_val is not None else res_data['value'], type_val)
+            self.manual_address_table.setItem(b_r_c, 0, QTableWidgetItem(f"0x{res_data['address']:X}"))
+            self.manual_address_table.setItem(b_r_c, 1, QTableWidgetItem(type_val))
+            self.manual_address_table.setItem(b_r_c, 2, QTableWidgetItem(val_txt))
+
+    # Scanning Biyatch
+    def initiate_first_scan(self):
+        if not self.selected_pid:
+            QMessageBox.warning(self, "Scan Error", "No process attached")
+            return
+        if self.scan_thread and self.scan_thread.isRunning():
+            QMessageBox.warning(self, "Scan Info", "A scan is already in progress.")
+            return
+        scan_params = self._get_scan_parameters()
+        if scan_params is None:
+            return
+        self.current_scan_results.clear()
+        self.results_table.setRowCount(0)
+        self.update_timer.stop()
+        if SCANNER_CORE_DLL is None and scan_params['value_type'] == "4 Bytes":
+            QMessageBox.warning(self, "DLL Error", "ScannerCore.dll not loaded. 4-byte scan will use slower Python fallback")
+        self.scan_thread = ScanThread(self.selected_pid, scan_params, timeout_seconds=30)
+        self.scan_thread.results_ready.connect(self.handle_scan_results_batch)
+        self.scan_thread.progress_update.connect(self.handle_scan_progress)
+        self.scan_thread.scan_finished.connect(self.handle_scan_finished)
+        self.scan_thread.error_occured.connect(self.handle_scan_error)
+        self._setup_progress_dialog("First Scan")
+        self.first_scan_button.setEnabled(False)
+        self.next_scan_button.setEnabled(False)
+        self.cancel_scan_button.setEnabled(True)
+        self.scan_thread.start()
 
     # Private Utils
     def _format_value_for_display(self, value, value_type_str):
@@ -481,6 +541,24 @@ class MainWindow(QMainWindow):
                 return None
 
         return None
+
+    def _get_scan_parameters(self):
+        value_type_str = self.value_type_combo.currentText()
+        scan_type_str = self.scan_type_combo.currentText()
+        is_hex_input = self.hex_checkbox_single.isChecked() if self.input_area_stacked_widget.currentWidget() == self.single_input_widget else self.hex_checkbox_double.isChecked()
+        input_val1_str = self.value_input_single.text() if self.input_area_stacked_widget.currentWidget() == self.single_input_widget else self.value_input1_double.text()
+        input_val2_str = self.value_input2_double.text() if self.input_area_stacked_widget.currentWidget() == self.double_input_widget and scan_type_str == "Value Between..." else None
+        try:
+            parsed_val1 = self._parse_input_value(input_val2_str, value_type_str, is_hex_input)
+            parsed_val2 = None
+            if input_val2_str:
+                parsed_val2 = self._parse_input_value(input_val2_str, value_type_str, is_hex_input)
+        except ValueError as e:
+            QMessageBox.warning(self, "Input Error", str(e))
+            return None
+        return {'value_type': value_type_str, 'scan_type': scan_type_str, 'parsed_val1': parsed_val1,
+                'parsed_val2': parsed_val2, 'case_sensitive': self.case_sensitive_checkbox.isChecked(),
+                'is_utf_16': self.utf16_checkbox.isChecked()}
 
 
 if __name__ == "__main__":
