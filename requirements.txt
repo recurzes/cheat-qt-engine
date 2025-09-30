@@ -1,3 +1,4 @@
+psutil
 python-qt5
 PyQt5>=5.15.0
 PyQt5-Qt5>=5.15.0
