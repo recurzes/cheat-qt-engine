@@ -26,7 +26,7 @@ from PyQt5.QtWidgets import (
     QFormLayout,
     QComboBox, QSpacerItem, QSizePolicy,
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 
 
 class MainWindow(QMainWindow):
@@ -235,6 +235,26 @@ class MainWindow(QMainWindow):
 
         middle_layout.addWidget(scan_controls_widget, 1)
         main_layout.addLayout(middle_layout, 1)
+
+        # Bottom Panel
+        self.manual_address_table = QTableWidget()
+        self.manual_address_table.setColumnCount(3)
+        self.manual_address_table.verticalHeader().setVisible(False)
+        self.manual_address_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        main_layout.addWidget(self.manual_address_table, 0)
+
+        # Connect Signals for UI Updates
+        # self.value_type_combo.currentIndexChanged.connect(self.update_scan_options)
+        # self.scan_type_combo.currentIndexChanged.connect(self.update_input_fields_layout)
+
+        # Initial UI State
+        self.value_type_combo.setCurrentText("4 Bytes")
+        # self.update_scan_options
+
+        # Timer for Real-time Value Updates in Tables
+        self.update_timer = QTimer(self)
+        self.update_timer.setInterval(1000)
+        # self.update_timer.timeout.connect(self.update_displayed_values)
 
 
 if __name__ == "__main__":
