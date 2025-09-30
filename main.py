@@ -8,6 +8,7 @@ import ctypes
 from ctypes import wintypes
 
 import psutil
+from PyQt5.QtGui import QBrush, QColor
 from PyQt5.QtWidgets import (
     QMainWindow,
     QApplication,
@@ -31,6 +32,10 @@ from PyQt5.QtCore import Qt, QTimer
 
 from util.process_window import ProcessWindow
 
+NORMAL_BACKGROUND_BRUSH = QBrush(QColor("white"))
+CHANGED_BACKGROUND_BRUSH = QBrush(QColor("red"))
+NORMAL_TEXT_BRUSH = QBrush(QColor("black"))
+
 # Win 32 API Definitions
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 PROCESS_QUERY_INFORMATION = 0x0400
@@ -42,6 +47,7 @@ ReadProcessMemory_Raw = kernel32.ReadProcessMemory
 
 CloseHandle_Raw = kernel32.CloseHandle
 CloseHandle_Raw.argtypes = [wintypes.HANDLE]
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -323,7 +329,8 @@ class MainWindow(QMainWindow):
             first_visible_row = 0
         if last_visible_row_approx == -1:
             if self.results_table.rowCount() > 0 and self.results_table.rowHeight(0) > 0:
-                last_visible_row_approx = first_visible_row + (viewport_rect.height() // self.results_table.rowHeight(0)) + 2
+                last_visible_row_approx = first_visible_row + (
+                            viewport_rect.height() // self.results_table.rowHeight(0)) + 2
             else:
                 last_visible_row_approx = self.results_table.rowCount() - 1
         start_row = max(0, first_visible_row)
@@ -339,7 +346,8 @@ class MainWindow(QMainWindow):
             address = addr_item.data(Qt.UserRole)
             value_type = addr_item.data(Qt.UserRole + 1)
 
-            if address is not None and value_type is not None and 0 <= row_idx_in_table < len(self.current_scan_results):
+            if address is not None and value_type is not None and 0 <= row_idx_in_table < len(
+                    self.current_scan_results):
                 current_result_entry = self.current_scan_results[row_idx_in_table]
                 if current_result_entry['address'] != address:
                     continue
@@ -349,13 +357,70 @@ class MainWindow(QMainWindow):
                 if value_type == "Array Of Byte":
                     read_length_for_live_update = current_result_entry.get("length", 16)
 
-
                 current_mem_val = self._read_memory_value(address, value_type, length_hint=read_length_for_live_update)
 
-                # new_value_text = self._format_value_for_display(current_mem_val, value_type)
+                new_value_text = self._format_value_for_display(current_mem_val, value_type)
 
+                previous_scan_value = current_result_entry['previous_value']
+
+                if current_mem_val is not None:
+                    current_result_entry['value'] = current_mem_val
+
+                    if val_item_cell.text() != new_value_text:
+                        val_item_cell.setText(new_value_text)
+
+                    values_are_different_from_previous = False
+                    if value_type == "String" or value_type == "Array Of Byte":
+                        values_are_different_from_previous = (current_mem_val != previous_scan_value)
+                    else:
+                        try:
+                            values_are_different_from_previous = (current_mem_val != previous_scan_value)
+                        except TypeError:
+                            values_are_different_from_previous = (
+                                        new_value_text != self._format_value_for_display(previous_scan_value,
+                                                                                         value_type))
+                    if values_are_different_from_previous:
+                        val_item_cell.setBackground(CHANGED_BACKGROUND_BRUSH)
+                    else:
+                        val_item_cell.setBackground(CHANGED_BACKGROUND_BRUSH)
+                        val_item_cell.setForeground(NORMAL_TEXT_BRUSH)
+                else:
+                    if val_item_cell.text() != "???":
+                        val_item_cell.setText("???")
+
+                    val_item_cell.setBackground(NORMAL_BACKGROUND_BRUSH)
+                    val_item_cell.setForeground(NORMAL_TEXT_BRUSH)
+
+            else:
+                if val_item_cell.text() != "ERR_DATA":
+                    val_item_cell.setText("ERR_DATA")
+
+        self.results_table.blockSignals(False)
 
     # Private Utils
+    def _format_value_for_display(self, value, value_type_str):
+        if value is None:
+            return "???"
+        if value_type_str == "String":
+            return str(value)
+        if value_type_str == "Array Of Byte":
+            return value.hex().upper() if isinstance(value, bytes) else "ERR_BYTES"
+        if isinstance(value, (int, float)):
+            if value_type_str in ["Float", "Double"]:
+                return f"{value:.4f}"
+            else:
+                fmt_char, size_bytes = self.value_types_map.get(value_type_str, (None, 0))
+                if size_bytes is None:
+                    return str(value)
+                hex_len = size_bytes * 2
+                value_to_format = value
+                if value < 0 and value_type_str != "Byte":
+                    value_to_format = (1 << (size_bytes * 8)) + value
+                elif value_type_str == "Byte" and value < 0:
+                    value_to_format = value & 0xFF
+                return f"0x{value_to_format:0{hex_len}X}"
+        return str(value)
+
     def _read_memory_value(self, address, value_type_str, length_hint=None):
         if not self.process_handle_main_python:
             return None
@@ -374,7 +439,8 @@ class MainWindow(QMainWindow):
         buffer = ctypes.create_string_buffer(read_size)
         bytes_read_c = ctypes.c_size_t(0)
 
-        if ReadProcessMemory_Raw(self.process_handle_main_python, ctypes.c_void_p(address), buffer, read_size, ctypes.byref(bytes_read_c)):
+        if ReadProcessMemory_Raw(self.process_handle_main_python, ctypes.c_void_p(address), buffer, read_size,
+                                 ctypes.byref(bytes_read_c)):
             actual_read = bytes_read_c.value
             if actual_read == 0:
                 return None
@@ -412,7 +478,6 @@ class MainWindow(QMainWindow):
                     return effective_data
             except (struct.error, UnicodeDecodeError):
                 return None
-
 
         return None
 
