@@ -48,6 +48,8 @@ ReadProcessMemory_Raw = kernel32.ReadProcessMemory
 CloseHandle_Raw = kernel32.CloseHandle
 CloseHandle_Raw.argtypes = [wintypes.HANDLE]
 
+VirtualQueryEx_Raw = kernel32.VirtualQueryEx
+
 main_window_ref = None
 
 SCANNER_CORE_DLL = None
