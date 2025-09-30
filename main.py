@@ -24,10 +24,21 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QGridLayout,
     QFormLayout,
-    QComboBox, QSpacerItem, QSizePolicy,
+    QComboBox, QSpacerItem, QSizePolicy, QMessageBox,
 )
 from PyQt5.QtCore import Qt, QTimer
 
+from util.process_window import ProcessWindow
+
+# Win 32 API Definitions
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+PROCESS_QUERY_INFORMATION = 0x0400
+PROCESS_VM_READ = 0x0010
+
+OpenProcess_Raw = kernel32.OpenProcess
+
+CloseHandle_Raw = kernel32.CloseHandle
+CloseHandle_Raw.argtypes = [wintypes.HANDLE]
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -43,7 +54,7 @@ class MainWindow(QMainWindow):
         self.selected_pid = None
         self.selected_process_name = ""
 
-        # self.process_handle.main_python = None
+        self.process_handle_main_python = None
 
         self.current_scan_results = []
         self.scan_thread = None
@@ -255,6 +266,39 @@ class MainWindow(QMainWindow):
         self.update_timer = QTimer(self)
         self.update_timer.setInterval(1000)
         # self.update_timer.timeout.connect(self.update_displayed_values)
+
+    def open_process_window(self):
+        dialog = ProcessWindow(self)
+        dialog.process_selected_signal.connect(self.handle_process_attached)
+        dialog.exec_()
+
+    def handle_process_attached(self, pid, name):
+        self.selected_pid = pid
+        self.selected_process_name = name
+        self.current_scan_results.clear()
+        self.results_table.setRowCount(0)
+        self.update_timer.stop()
+        if self.process_handle_main_python:
+            CloseHandle_Raw(self.process_handle_main_python)
+            self.process_handle_main_python = None
+        if pid == 0:
+            self.selected_process_label.setText("No process attached")
+            self.selected_pid = None
+            return
+
+        try:
+            self.process_handle_main_python = OpenProcess_Raw(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, False, pid)
+            if not self.process_handle_main_python:
+                raise Exception(f"OpenProcess_Raw failed with error: {ctypes.get_last_error()}")
+            self.selected_process_label.setText(f"Attached to: {name} (PID: {pid})")
+            QMessageBox.information(self, "Process Attached", f"Successfully attached to {name} (PID: {pid})")
+        except Exception as e:
+            self.selected_pid = None
+            self.selected_process_name = ""
+            self.process_handle_main_python = None
+            self.selected_process_label.setText("No process attached")
+            QMessageBox.critical(self, "Attachment Error", f"Could not open process {name} (PID: {pid}): {e}")
+
 
 
 if __name__ == "__main__":
