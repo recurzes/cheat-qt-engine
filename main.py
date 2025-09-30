@@ -48,6 +48,7 @@ ReadProcessMemory_Raw = kernel32.ReadProcessMemory
 CloseHandle_Raw = kernel32.CloseHandle
 CloseHandle_Raw.argtypes = [wintypes.HANDLE]
 
+main_window_ref = None
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -82,7 +83,7 @@ class MainWindow(QMainWindow):
                 getattr(QStyle, "SP_ComputerIcon", QStyle.SP_DriveNetIcon)
             )
         )
-        # self.process_list_button.clicked.connect(self.open_process_window)
+        self.process_list_button.clicked.connect(self.open_process_window)
 
         self.selected_process_label = QLabel("No process attached.")
         self.selected_process_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
