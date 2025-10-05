@@ -53,6 +53,108 @@ VirtualQueryEx_Raw = kernel32.VirtualQueryEx
 main_window_ref = None
 
 SCANNER_CORE_DLL = None
+FoundResultWithValue = None
+
+class CppScanComparisonType(ctypes.c_int):
+    ExactValue = 0
+    ValueBetween = 1
+    BiggerThan = 2
+    SmallerThan = 3
+    StringContains = 4
+    StringExact = 5
+    AoBExact = 6
+
+try:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    dll_path_options = [
+        os.path.join(script_dir, "ScannerCore.dll"),
+        os.path.join(script_dir, "..", "x64", "Release", "ScannerCore.dll"),
+        os.path.join(script_dir, "x64", "Release", "ScannerCore.dll"),
+        os.path.join(script_dir, "..", "ScannerCore.dll"),
+    ]
+
+    dll_to_load_path = None
+    for path_opt in dll_path_options:
+        if os.path.exists(path_opt):
+            dll_to_load_path = path_opt
+            break
+
+    if dll_to_load_path:
+        SCANNER_CORE_DLL = ctypes.CDLL(dll_to_load_path)
+        print(f"INFO: Successfully loaded ScannerCore.dll from {dll_to_load_path}")
+
+        SCANNER_CORE_DLL.OpenTargetProcess.argtypes = [wintypes.DWORD]
+        SCANNER_CORE_DLL.OpenTargetProcess.restype = wintypes.HANDLE
+
+        SCANNER_CORE_DLL.CloseTargetProcess.argtypes = [wintypes.HANDLE]
+        SCANNER_CORE_DLL.CloseTargetProcess.restype = wintypes.BOOL
+
+        SCANNER_CORE_DLL.FreeFoundAddresses.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+        SCANNER_CORE_DLL.FreeFoundAddresses.restype = None
+
+        class FoundResultWithValue_UNION_CTYPES(ctypes.Union):
+            _fields_ = [
+                ('val_int8', ctypes.c_int8), ('val_int16', ctypes.c_int16),
+                ('val_int32', ctypes.c_int32), ('val_int64', ctypes.c_int64),
+                ('val_float', ctypes.c_float), ('val_double', ctypes.c_double)
+            ]
+        class FoundResultWithValue_CTYPES(ctypes.Structure):
+            _fields_ = [
+                ('address', ctypes.c_void_p),
+                ('value', FoundResultWithValue_UNION_CTYPES)
+            ]
+
+        FoundResultWithValue = FoundResultWithValue_CTYPES
+
+        SCANNER_CORE_DLL.FoundResultWithValue = FoundResultWithValue
+
+        SCANNER_CORE_DLL.FreeFoundAddressesAndValues.argtypes = [ctypes.c_void_p]
+        SCANNER_CORE_DLL.FreeFoundAddressesAndValues.restype = None
+
+        common_args_numeric_ex = [
+            wintypes.HANDLE, ctypes.c_void_p, ctypes.c_size_t,
+            None, None,
+            CppScanComparisonType,
+            ctypes.POINTER(ctypes.POINTER(FoundResultWithValue)),
+            ctypes.POINTER(ctypes.c_int)
+        ]
+
+        type_map_to_ctypes = {
+            "Byte": (SCANNER_CORE_DLL.ScanChunkForInt8Ex, ctypes.c_int8),
+            "2 Bytes": (SCANNER_CORE_DLL.ScanChunkForInt16Ex, ctypes.c_int16),
+            "4 Bytes": (SCANNER_CORE_DLL.ScanChunkForInt32Ex, ctypes.c_int32),
+            "8 Bytes": (SCANNER_CORE_DLL.ScanChunkForInt64Ex, ctypes.c_int64),
+            "Float": (SCANNER_CORE_DLL.ScanChunkForFloatEx, ctypes.c_float),
+            "Double": (SCANNER_CORE_DLL.ScanChunkForDoubleEx, ctypes.c_double),
+        }
+
+        for type_name, (func, c_type) in type_map_to_ctypes.items():
+            if hasattr(SCANNER_CORE_DLL, func.__name__):
+                func.argtypes = common_args_numeric_ex[:3] + [c_type, c_type] + common_args_numeric_ex[5:]
+                func.restype = wintypes.BOOL
+
+            if hasattr(SCANNER_CORE_DLL, 'ScanChunkForStringA'):
+                SCANNER_CORE_DLL.ScanChunkForStringA.argtypes = [wintypes.HANDLE, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_char_p, wintypes.BOOL, CppScanComparisonType, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)), ctypes.POINTER(ctypes.c_int)]
+                SCANNER_CORE_DLL.ScanChunkForStringA.restype = wintypes.BOOL
+            if hasattr(SCANNER_CORE_DLL, 'ScanChunkForStringW'):
+                SCANNER_CORE_DLL.ScanChunkForStringW.argtypes = [wintypes.HANDLE, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_char_p, wintypes.BOOL, CppScanComparisonType, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)), ctypes.POINTER(ctypes.c_int)]
+                SCANNER_CORE_DLL.ScanChunkForStringW.restype = wintypes.BOOL
+            if hasattr(SCANNER_CORE_DLL, 'ScanChunkForAoB'):
+                SCANNER_CORE_DLL.ScanChunkForAoB.argtypes = [wintypes.HANDLE, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_char_p, wintypes.BOOL, CppScanComparisonType, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)), ctypes.POINTER(ctypes.c_int)]
+                SCANNER_CORE_DLL.ScanChunkForAoB.restype = wintypes.BOOL
+
+    else:
+        print(f"ERROR: ScannerCore.dll not found in expected paths. C++ accelerated scanning will be disabled")
+        print(f"Checked paths: {dll_path_options}")
+        SCANNER_CORE_DLL = None
+
+except OSError as e:
+    print(f"OSError loading ScannerCore.dll: {e}. C++ accelerated scanning will be disabled")
+    SCANNER_CORE_DLL = None
+
+except AttributeError as e:
+    print(f"AttributeError during DLL function setup (function likely not found or DLL not loaded properly): {e}. C++ acceleration likely disabled.")
+    SCANNER_CORE_DLL = None
 
 
 class MainWindow(QMainWindow):

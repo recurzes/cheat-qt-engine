@@ -34,7 +34,7 @@ SCANNERCORE_API BOOL CloseTargetProcess(HANDLE processHandle)
     return CloseHandle(processHandle);
 }
 
-SCANNERCORE_API void FreeFoundAddressesAndValues(uintptr_t *addressesArray)
+SCANNERCORE_API void FreeFoundAddresses(uintptr_t *addressesArray)
 {
     if (addressesArray != nullptr)
     {
@@ -42,7 +42,7 @@ SCANNERCORE_API void FreeFoundAddressesAndValues(uintptr_t *addressesArray)
     }
 }
 
-SCANNERCORE_API void FreeFoundAddessesAndValues(void *resultsArray)
+SCANNERCORE_API void FreeFoundAddressesAndValues(void *resultsArray)
 {
     if (resultsArray != nullptr)
     {
@@ -112,18 +112,20 @@ BOOL ScanChunkNumericEx(
         {
             FoundResultWithValue res;
             res.address = startAddress + offset;
-            if constexpr (std::is_same<T, int8_t>)
-                res.value.val_int8 = valueInMemory;
-            else if constexpr (std::is_same<T, int16_t>)
-                res.value.val_int16 = valueInMemory;
-            else if constexpr (std::is_same<T, int32_t>)
-                res.value.val_int32 = valueInMemory;
-            else if constexpr (std::is_same<T, int64_t>)
-                res.value.val_int64 = valueInMemory;
-            else if constexpr (std::is_same<T, float>)
-                res.value.val_float = valueInMemory;
-            else if constexpr (std::is_same<T, double>)
-                res.value.val_double = valueInMemory;
+            if constexpr (std::is_same<T, int8_t>::value) {
+    res.value.val_int8 = valueInMemory;
+} else if constexpr (std::is_same<T, int16_t>::value) {
+    res.value.val_int16 = valueInMemory;
+} else if constexpr (std::is_same<T, int32_t>::value) {
+    res.value.val_int32 = valueInMemory;
+} else if constexpr (std::is_same<T, int64_t>::value) {
+    res.value.val_int64 = valueInMemory;
+} else if constexpr (std::is_same<T, float>::value) {
+    res.value.val_float = valueInMemory;
+} else if constexpr (std::is_same<T, double>::value) {
+    res.value.val_double = valueInMemory;
+}
+
             localFound.push_back(res);
         }
     }

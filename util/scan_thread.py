@@ -4,7 +4,7 @@ import time
 from ctypes import wintypes
 
 from PyQt5.QtCore import QThread, pyqtSignal
-from main import main_window_ref
+from main import main_window_ref, CppScanComparisonType
 
 from main import OpenProcess_Raw, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ, SCANNER_CORE_DLL, CloseHandle_Raw, \
     VirtualQueryEx_Raw, ReadProcessMemory_Raw
@@ -20,14 +20,7 @@ PAGE_EXECUTE_READ = 0x20
 SCAN_CHUNK_SIZE = 1024 * 1024 * 1
 
 
-class CppScanComparisonType(ctypes.c_int):
-    ExactValue = 0
-    ValueBetween = 1
-    BiggerThan = 2
-    SmallerThan = 3
-    StringContains = 4
-    StringExact = 5
-    AoBExact = 6
+
 
 
 class MEMORY_BASIC_INFORMATION(ctypes.Structure):
