@@ -434,3 +434,21 @@ class ScanThread(QThread):
             comp_type_c = CppScanComparisonType.AoBExact
 
         return v1_c, v2_c, comp_type_c
+
+
+    def _extract_value_from_c_struct(self, c_union_value, value_type_str):
+        if value_type_str == "Byte":
+            return c_union_value.val_int8
+        if value_type_str == "2 Bytes":
+            return c_union_value.val_int16
+        if value_type_str == "4 Bytes":
+            return c_union_value.val_int32
+        if value_type_str == "8 Bytes":
+            return c_union_value.val_int64
+        if value_type_str == "Float":
+            return c_union_value.val_float
+        if value_type_str == "Double":
+            return c_union_value.val_double
+
+        return None
+
