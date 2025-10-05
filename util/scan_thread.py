@@ -539,4 +539,7 @@ class ScanThread(QThread):
                 return None
         return None
 
+    def cancel(self):
+        self.is_cancelled = True
+
 
