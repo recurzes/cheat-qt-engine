@@ -3,9 +3,9 @@
 #include <string>
 #include <algorithm>
 #include <cctype>
-#include <cwtype>
+#include <cwctype>
 
-BOOL APIENTRY DllMain(HModule hModule,
+BOOL APIENTRY DllMain(HMODULE hModule,
                       DWORD ul_reason_for_call,
                       LPVOID lpReserved)
 {
@@ -34,7 +34,7 @@ SCANNERCORE_API BOOL CloseTargetProcess(HANDLE processHandle)
     return CloseHandle(processHandle);
 }
 
-SCANNERCORE_API void FreeFoundAddresses(uintptr_t *addressesArray)
+SCANNERCORE_API void FreeFoundAddressesAndValues(uintptr_t *addressesArray)
 {
     if (addressesArray != nullptr)
     {
@@ -44,7 +44,7 @@ SCANNERCORE_API void FreeFoundAddresses(uintptr_t *addressesArray)
 
 SCANNERCORE_API void FreeFoundAddessesAndValues(void *resultsArray)
 {
-    if (resultsArray != nullpt)
+    if (resultsArray != nullptr)
     {
         delete[] static_cast<FoundResultWithValue *>(resultsArray);
     }
@@ -143,32 +143,32 @@ BOOL ScanChunkNumericEx(
 }
 
 // Exported numeric scan functions
-SCANNERCORE_API BOOL ScanChunkForInt8Ex(HANDLE ph, uintptr_t addr, size_t, size, int8_t v1, int8_t v2, ScanComparisonType ct,
+SCANNERCORE_API BOOL ScanChunkForInt8Ex(HANDLE ph, uintptr_t addr, size_t size, int8_t v1, int8_t v2, ScanComparisonType ct,
                                         FoundResultWithValue **res, int *nFound)
 {
     return ScanChunkNumericEx<int8_t>(ph, addr, size, v1, v2, ct, res, nFound);
 }
-SCANNERCORE_API BOOL ScanChunkForInt16Ex(HANDLE ph, uintptr_t addr, size_t, size, int16_t v1, int16_t v2, ScanComparisonType ct,
+SCANNERCORE_API BOOL ScanChunkForInt16Ex(HANDLE ph, uintptr_t addr, size_t size, int16_t v1, int16_t v2, ScanComparisonType ct,
                                          FoundResultWithValue **res, int *nFound)
 {
     return ScanChunkNumericEx<int16_t>(ph, addr, size, v1, v2, ct, res, nFound);
 }
-SCANNERCORE_API BOOL ScanChunkForInt32Ex(HANDLE ph, uintptr_t addr, size_t, size, int32_t v1, int32_t v2, ScanComparisonType ct,
+SCANNERCORE_API BOOL ScanChunkForInt32Ex(HANDLE ph, uintptr_t addr, size_t size, int32_t v1, int32_t v2, ScanComparisonType ct,
                                          FoundResultWithValue **res, int *nFound)
 {
     return ScanChunkNumericEx<int32_t>(ph, addr, size, v1, v2, ct, res, nFound);
 }
-SCANNERCORE_API BOOL ScanChunkForInt64Ex(HANDLE ph, uintptr_t addr, size_t, size, int64_t v1, int64_t v2, ScanComparisonType ct,
+SCANNERCORE_API BOOL ScanChunkForInt64Ex(HANDLE ph, uintptr_t addr, size_t size, int64_t v1, int64_t v2, ScanComparisonType ct,
                                          FoundResultWithValue **res, int *nFound)
 {
     return ScanChunkNumericEx<int64_t>(ph, addr, size, v1, v2, ct, res, nFound);
 }
-SCANNERCORE_API BOOL ScanChunkForFloatEx(HANDLE ph, uintptr_t addr, size_t, size, float v1, float v2, ScanComparisonType ct,
+SCANNERCORE_API BOOL ScanChunkForFloatEx(HANDLE ph, uintptr_t addr, size_t size, float v1, float v2, ScanComparisonType ct,
                                          FoundResultWithValue **res, int *nFound)
 {
     return ScanChunkNumericEx<float>(ph, addr, size, v1, v2, ct, res, nFound);
 }
-SCANNERCORE_API BOOL ScanChunkForDoubleEx(HANDLE ph, uintptr_t addr, size_t, size, double v1, double v2, ScanComparisonType ct,
+SCANNERCORE_API BOOL ScanChunkForDoubleEx(HANDLE ph, uintptr_t addr, size_t size, double v1, double v2, ScanComparisonType ct,
                                           FoundResultWithValue **res, int *nFound)
 {
     return ScanChunkNumericEx<double>(ph, addr, size, v1, v2, ct, res, nFound);
@@ -204,7 +204,7 @@ SCANNERCORE_API BOOL ScanChunkForStringA(
         return FALSE;
     }
     *numFound = 0;
-    *foundAddresses = nullpt;
+    *foundAddresses = nullptr;
 
     size_t searchStrLen = strlen(searchStrAnsi);
     if (searchStrLen == 0 || totalSizeOfPythonChunk < searchStrLen)
@@ -239,7 +239,7 @@ SCANNERCORE_API BOOL ScanChunkForStringA(
         if (bytesActuallyRead < searchStrLen)
             break;
 
-        for (size_t offsetInInternalChunk = 0; offsetInInternalChunk <= bytesActuallRead - searchStrLen; ++offsetInInternalChunk)
+        for (size_t offsetInInternalChunk = 0; offsetInInternalChunk <= bytesActuallyRead - searchStrLen; ++offsetInInternalChunk)
         {
             bool match = false;
             if (caseSensitive)
@@ -314,7 +314,7 @@ SCANNERCORE_API BOOL ScanChunkForStringW(
 
     size_t searchStrCharLen = wcslen(searchStrWide);
     size_t searchStrByteLen = searchStrCharLen * sizeof(wchar_t);
-    if (searchStrByteLen == 0 || totalSizeOfPythonChunk < searchByteLen)
+    if (searchStrByteLen == 0 || totalSizeOfPythonChunk < searchStrByteLen)
         return TRUE;
 
     std::vector<uintptr_t> localFound;
@@ -330,7 +330,7 @@ SCANNERCORE_API BOOL ScanChunkForStringW(
     uintptr_t currentScanAddressInPythonChunk = startAddressOfPythonChunk;
     size_t remainingInPythonChunk = totalSizeOfPythonChunk;
 
-    while (remainingInPythonChunk >= searchStrLen)
+    while (remainingInPythonChunk >= searchStrByteLen)
     {
         size_t bytesToReadForThisInternalChunk = min(INTERNAL_READ_SIZE, remainingInPythonChunk);
         if (bytesToReadForThisInternalChunk < searchStrByteLen)
