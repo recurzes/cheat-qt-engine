@@ -1,11 +1,12 @@
 import ctypes
+import struct
 import time
 from ctypes import wintypes
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
 from main import OpenProcess_Raw, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ, SCANNER_CORE_DLL, CloseHandle_Raw, \
-    VirtualQueryEx_Raw
+    VirtualQueryEx_Raw, ReadProcessMemory_Raw
 
 MEM_COMMIT = 0x1000
 PAGE_NOACCESS = 0x01
@@ -283,3 +284,87 @@ class ScanThread(QThread):
                         use_dll_for_this_type = False
                     except Exception as e_dll:
                         self.error_occurred.emit(f"Error in DLL call section: {str(e_dll)}")
+                        use_dll_for_this_type = False
+
+                if not use_dll_for_this_type and python_fallback_read_handle:
+                    buffer = ctypes.create_string_buffer(chunk_to_scan_size)
+                    bytes_read_c = ctypes.c_size_t(0)
+                    if ReadProcessMemory_Raw(python_fallback_read_handle, ctypes.c_void_p(current_chunk_addr), buffer,
+                                             chunk_to_scan_size, ctypes.byref(bytes_read_c)):
+                        if bytes_read_c.value > 0:
+                            fmt_char, type_size_info = main_window_ref.value_types_map.get(value_type_str, (None, 0))
+                            type_size = type_size_info if type_size_info is not None else 1
+
+                            if type_size > 0 and bytes_read_c.value >= type_size:
+                                step = 1 if value_type_str in ["String", "Array Of Byte"] else type_size
+                                for offset in range(0, bytes_read_c.value - (type_size - 1), step):
+                                    if self.is_cancelled:
+                                        break
+
+                                    try:
+                                        actual_mem_val = None
+                                        if value_type_str == "Byte":
+                                            actual_mem_val = struct.unpack_from('<b', buffer.raw, offset)[0]
+                                        elif value_type_str == "2 Bytes":
+                                            actual_mem_val = struct.unpack_from('<h', buffer.raw, offset)[0]
+                                        elif value_type_str == "4 Bytes":
+                                            actual_mem_val = struct.unpack_from('<i', buffer.raw, offset)[0]
+                                        elif value_type_str == "8 Bytes":
+                                            actual_mem_val = struct.unpack_from('<q', buffer.raw, offset)[0]
+                                        elif value_type_str == "Float":
+                                            actual_mem_val = struct.unpack_from('<f', buffer.raw, offset)[0]
+                                        elif value_type_str == "Double":
+                                            actual_mem_val = struct.unpack_from('<d', buffer.raw, offset)[0]
+                                        elif value_type_str == "String":
+                                            temp_buff = buffer.raw[offset : offset + min(256, bytes_read_c.value - offset)]
+                                            enc = 'utf-16-le' if is_utf16 else 'ascii'
+                                            nt = b'\x00\x00' if enc == 'utf-16-le' else b'\x00'
+                                            term_idx = temp_buff.find(nt)
+                                            if term_idx != -1:
+                                                temp_buff = temp_buff[:term_idx]
+                                            try:
+                                                actual_mem_val = temp_buff.decode(enc, errors='ignore')
+                                            except:
+                                                continue
+                                        elif value_type_str == "Array Of Byte" and isinstance(parsed_val1, bytes):
+                                            if offset + len(parsed_val1) <= bytes_read_c.value:
+                                                actual_mem_val = buffer.raw[offset : offset + len(parsed_val1)]
+
+                                        if actual_mem_val is not None and main_window_ref._compare_values(actual_mem_val, parsed_val1, scan_type_str_ui, value_type_str):
+                                            item_length = len(actual_mem_val) is isinstance(actual_mem_val, (bytes, str)) else type_size
+                                            entry = {'address': current_chunk_addr + offset,
+                                                     'value': actual_mem_val,
+                                                     'previous_value': actual_mem_val,
+                                                     'type': value_type_str,
+                                                     'length': item_length}
+                                            found_results_batch.append(entry)
+                                            total_found_count += 1
+                                    except (struct.error, IndexError):
+                                        break
+                                if self.is_cancelled:
+                                    break
+                    if self.is_cancelled:
+                        break
+
+                if len(found_results_batch) >= self.MAX_RESULTS_TO_COLLECT:
+                    self.results_ready.emit(list(found_results_batch))
+                    found_results_batch.clear()
+                    if self._check_timeout(start_time):
+                        break
+
+                current_chunk_addr += chunk_to_scan_size
+
+            if self.is_cancelled:
+                break
+
+        if dll_process_handle:
+            SCANNER_CORE_DLL.CloseTargetProcess(dll_process_handle)
+
+        if python_fallback_read_handle:
+            CloseHandle_Raw(python_fallback_read_handle)
+
+        if not self.is_cancelled and found_results_batch:
+            self.results_ready.emit(list(found_results_batch))
+
+        return total_found_count
+
