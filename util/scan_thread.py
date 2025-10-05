@@ -543,3 +543,5 @@ class ScanThread(QThread):
         self.is_cancelled = True
 
 
+
+
