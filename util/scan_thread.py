@@ -497,4 +497,46 @@ class ScanThread(QThread):
             self.results_ready.emit(list(new_results_batch))
         return total_narrowed_count
 
+    def _read_memory_value_ctypes(self, handle, address, value_type_str):
+        global main_window_ref
+        if not handle:
+            return None
+
+        fmt_char_ign, type_size = main_window_ref.value_types_map.get(value_type_str, (None, 0))
+        read_size = type_size
+
+        is_thread_utf16 = self.scan_params.get('is_utf16', main_window_ref.utf16_checkbox.isChecked() if main_window_ref else False)
+
+        if value_type_str == "String":
+            read_size = 256
+        elif value_type_str == "Array Of Byte":
+            read_size = 16
+        if read_size is None or read_size == 0:
+            return None
+
+        buffer = ctypes.create_string_buffer(read_size)
+        bytes_read_c = ctypes.c_size_t(0)
+        if ReadProcessMemory_Raw(handle, ctypes.c_void_p(address), buffer, read_size, ctypes.byref(bytes_read_c)):
+            actual_read = bytes_read_c.value
+            if actual_read == 0:
+                return None
+            if value_type_str not in ["String", "Array Of Byte"] and actual_read < type_size:
+                return None
+            try:
+                if value_type_str == "Byte":
+                    return struct.unpack_from('<b', buffer.raw, 0)[0]
+                elif value_type_str == "String":
+                    raw_b = buffer.raw[:actual_read]
+                    encoding = 'utf-16-le'if is_thread_utf16 else 'ascii'
+                    nt = b'\x00\x00' if encoding == 'utf-16-le' else b'\x00'
+                    idx = raw_b.find(nt)
+                    if idx != -1:
+                        raw_b = raw_b[:idx]
+                    return raw_b.decode(encoding, errors="ignore")
+                elif value_type_str == "Array Of Byte":
+                    return buffer.raw[:actual_read]
+            except (struct.error, UnicodeDecodeError):
+                return None
+        return None
+
 
