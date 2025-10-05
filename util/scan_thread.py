@@ -4,6 +4,7 @@ import time
 from ctypes import wintypes
 
 from PyQt5.QtCore import QThread, pyqtSignal
+from main import main_window_ref
 
 from main import OpenProcess_Raw, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ, SCANNER_CORE_DLL, CloseHandle_Raw, \
     VirtualQueryEx_Raw, ReadProcessMemory_Raw
@@ -17,6 +18,16 @@ PAGE_READONLY = 0x02
 PAGE_EXECUTE_READ = 0x20
 
 SCAN_CHUNK_SIZE = 1024 * 1024 * 1
+
+
+class CppScanComparisonType(ctypes.c_int):
+    ExactValue = 0
+    ValueBetween = 1
+    BiggerThan = 2
+    SmallerThan = 3
+    StringContains = 4
+    StringExact = 5
+    AoBExact = 6
 
 
 class MEMORY_BASIC_INFORMATION(ctypes.Structure):
@@ -316,7 +327,8 @@ class ScanThread(QThread):
                                         elif value_type_str == "Double":
                                             actual_mem_val = struct.unpack_from('<d', buffer.raw, offset)[0]
                                         elif value_type_str == "String":
-                                            temp_buff = buffer.raw[offset : offset + min(256, bytes_read_c.value - offset)]
+                                            temp_buff = buffer.raw[
+                                                offset: offset + min(256, bytes_read_c.value - offset)]
                                             enc = 'utf-16-le' if is_utf16 else 'ascii'
                                             nt = b'\x00\x00' if enc == 'utf-16-le' else b'\x00'
                                             term_idx = temp_buff.find(nt)
@@ -328,10 +340,12 @@ class ScanThread(QThread):
                                                 continue
                                         elif value_type_str == "Array Of Byte" and isinstance(parsed_val1, bytes):
                                             if offset + len(parsed_val1) <= bytes_read_c.value:
-                                                actual_mem_val = buffer.raw[offset : offset + len(parsed_val1)]
+                                                actual_mem_val = buffer.raw[offset: offset + len(parsed_val1)]
 
-                                        if actual_mem_val is not None and main_window_ref._compare_values(actual_mem_val, parsed_val1, scan_type_str_ui, value_type_str):
-                                            item_length = len(actual_mem_val) is isinstance(actual_mem_val, (bytes, str)) else type_size
+                                        if actual_mem_val is not None and main_window_ref._compare_values(
+                                                actual_mem_val, parsed_val1, scan_type_str_ui, value_type_str):
+                                            item_length = len(actual_mem_val) if isinstance(actual_mem_val,
+                                                                                            (bytes, str)) else type_size
                                             entry = {'address': current_chunk_addr + offset,
                                                      'value': actual_mem_val,
                                                      'previous_value': actual_mem_val,
@@ -368,3 +382,55 @@ class ScanThread(QThread):
 
         return total_found_count
 
+    def _prepare_dll_scan_params(self, value_type_str, scan_type_str_ui, p_val1, p_val2):
+        v1_c, v2_c = 0, 0
+        comp_type_c = CppScanComparisonType.ExactValue
+
+        if value_type_str in ["Byte", "2 Bytes", "4 Bytes", "8 Bytes", "Float", "Double"]:
+            try:
+                if value_type_str == "Float":
+                    v1_c = ctypes.c_float(float(p_val1))
+                    if p_val2 is not None:
+                        v2_c = ctypes.c_float(float(p_val2))
+                elif value_type_str == "Double":
+                    v1_c = ctypes.c_double(float(p_val1))
+                    if p_val2 is not None:
+                        v2_c = ctypes.c_double(float(p_val2))
+                elif value_type_str == "Byte":
+                    v1_c = ctypes.c_int8(int(p_val1))
+                    if p_val2 is not None:
+                        v2_c = ctypes.c_int8(int(p_val2))
+                elif value_type_str == "2 Bytes":
+                    v1_c = ctypes.c_int16(int(p_val1))
+                    if p_val2 is not None:
+                        v2_c = ctypes.c_int16(int(p_val2))
+                elif value_type_str == "4 Bytes":
+                    v1_c = ctypes.c_int32(int(p_val1))
+                    if p_val2 is not None:
+                        v2_c = ctypes.c_int32(int(p_val2))
+                elif value_type_str == "8 Bytes":
+                    v1_c = ctypes.c_int64(int(p_val1))
+                    if p_val2 is not None:
+                        v2_c = ctypes.c_int64(int(p_val2))
+            except (ValueError, TypeError) as e:
+                raise ValueError(f"Invalid numeric value for DLL scan: {p_val1} or {p_val2}. Error: {e}")
+
+            if scan_type_str_ui == "Value Between...":
+                comp_type_c = CppScanComparisonType.ValueBetween
+            elif scan_type_str_ui == "Bigger Than...":
+                comp_type_c = CppScanComparisonType.BiggerThan
+            elif scan_type_str_ui == "Smaller Than...":
+                comp_type_c = CppScanComparisonType.SmallerThan
+
+
+        elif value_type_str == "String":
+            if scan_type_str_ui == "Search for text":
+                comp_type_c = CppScanComparisonType.StringContains
+            else:
+                comp_type_c = CppScanComparisonType.StringExact
+
+
+        elif value_type_str == "Array Of Byte":
+            comp_type_c = CppScanComparisonType.AoBExact
+
+        return v1_c, v2_c, comp_type_c
