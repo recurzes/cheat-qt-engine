@@ -452,3 +452,49 @@ class ScanThread(QThread):
 
         return None
 
+    def _perform_next_scan_logic(self, start_time):
+        global main_window_ref
+        new_results_batch =[]
+        total_narrowed_count = 0
+        num_to_scan = len(self.previous_results)
+        python_read_handle = OpenProcess_Raw(PROCESS_VM_READ, False, self.target_pid)
+        if not python_read_handle:
+            self.error_occurred.emit(f"NextScan: No read handle PID {self.target_pid}")
+            return 0
+        for i, old_results in enumerate(self.previous_results):
+            if self._check_timeout(start_time, "Next Scan Item") or self.is_cancelled:
+                break
+            self.progress_update.emit(i + 1, num_to_scan, total_narrowed_count)
+            address = old_results['address']
+            original_type = old_results['type']
+
+            current_mem_val_for_comparison = self._read_memory_value_ctypes(python_read_handle, address, self.scan_params['value_type'])
+            if current_mem_val_for_comparison is not None:
+                if main_window_ref._compare_values(current_mem_val_for_comparison, self.scan_params['parsed_val1'], self.scan_params['parsed_val2'], self.scan_params['scan_type'], self.scan_params['value_type']):
+                    actual_current_val_as_original = self._read_memory_value_ctypes(python_read_handle, address, original_type)
+                    item_length = old_results.get('length')
+                    if item_length is None:
+                        if original_type == "Array Of Byte" or original_type == "String":
+                            item_length = len(actual_current_val_as_original) if actual_current_val_as_original else (len(old_results['value']) if old_results['value'] else 16)
+                        else:
+                            item_length = main_window_ref.value_types_map.get(original_type, (None, 0))[1]
+
+                    entry = {'address': address,
+                             'value': actual_current_val_as_original if actual_current_val_as_original is not None else old_results['value'],
+                             'previous_value': old_results['value'],
+                             'type': original_type,
+                             'length': item_length}
+                    new_results_batch.append(entry)
+                    total_narrowed_count += 1
+            if len(new_results_batch) >= self.MAX_RESULTS_TO_COLLECT:
+                self.results_ready.emit(list(new_results_batch))
+                new_results_batch.clear()
+                if self._check_timeout(start_time):
+                    break
+        if python_read_handle:
+            CloseHandle_Raw(python_read_handle)
+        if not self.is_cancelled and new_results_batch:
+            self.results_ready.emit(list(new_results_batch))
+        return total_narrowed_count
+
+
